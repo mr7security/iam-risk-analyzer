@@ -34,6 +34,7 @@ from checks.high import run_high_checks
 from checks.medium import run_medium_checks
 from checks.informational import run_informational_checks
 from report.html_generator import generate_report
+from report.pdf_generator import generate_pdf
 from utils.scoring import calculate_score
 
 # ---------------------------------------------------------------------------
@@ -99,6 +100,16 @@ def parse_args() -> argparse.Namespace:
         "--output",
         default="iam_risk_report.html",
         help="Output HTML report path (default: iam_risk_report.html)",
+    )
+    parser.add_argument(
+        "--pdf-output",
+        default=None,
+        help="Output PDF audit report path (default: derived from --output, e.g. report_auditoria.pdf)",
+    )
+    parser.add_argument(
+        "--no-pdf",
+        action="store_true",
+        help="Skip PDF audit report generation (HTML only)",
     )
 
     # Selective checks
@@ -219,7 +230,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     # 5. Generate HTML report
     # ------------------------------------------------------------------
-    logger.info(f"Generating report → {args.output}")
+    logger.info(f"Generating HTML report → {args.output}")
     generate_report(
         output_path=args.output,
         findings=findings,
@@ -230,8 +241,35 @@ def main() -> None:
         run_start=run_start,
         run_end=run_end,
     )
+    logger.info(f"HTML report saved to: {args.output}")
 
-    logger.info(f"=== Report saved to: {args.output} ===")
+    # ------------------------------------------------------------------
+    # 6. Generate PDF audit report (unless disabled)
+    # ------------------------------------------------------------------
+    if not args.no_pdf:
+        import os as _os
+
+        pdf_path = args.pdf_output
+        if not pdf_path:
+            stem, _ = _os.path.splitext(args.output)
+            pdf_path = f"{stem}_auditoria.pdf"
+        try:
+            logger.info(f"Generating PDF audit report → {pdf_path}")
+            generate_pdf(
+                output_path=pdf_path,
+                findings=findings,
+                score=score,
+                tenant_info=tenant_info,
+                tenant_id=args.tenant_id,
+                auth_method=args.auth_method,
+                run_start=run_start,
+                run_end=run_end,
+            )
+            logger.info(f"PDF audit report saved to: {pdf_path}")
+        except Exception as e:
+            logger.error(f"PDF generation failed ({e}). HTML report is still available.")
+
+    logger.info("=== Done ===")
 
 
 if __name__ == "__main__":
