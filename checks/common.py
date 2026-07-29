@@ -13,6 +13,11 @@ from graph.client import GraphClient
 
 logger = logging.getLogger(__name__)
 
+def T(es: str, en: str) -> dict:
+    """Bilingual text helper. Returns {'es': ..., 'en': ...} for the report."""
+    return {"es": es, "en": en}
+
+
 # Auth method @odata.type that is NOT a second factor.
 PASSWORD_METHOD_TYPE = "#microsoft.graph.passwordAuthenticationMethod"
 
