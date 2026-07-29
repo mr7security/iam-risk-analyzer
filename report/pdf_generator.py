@@ -96,11 +96,15 @@ def _short(val, limit: int = 90) -> str:
 def _styles():
     ss = getSampleStyleSheet()
     ss.add(ParagraphStyle("CoverTitle", parent=ss["Title"], textColor=NAVY,
-                          fontSize=22, leading=26, alignment=0))
+                          fontSize=22, leading=27, alignment=TA_CENTER))
     ss.add(ParagraphStyle("CoverSub", parent=ss["Title"], textColor=NAVY,
-                          fontSize=15, leading=18, alignment=0, spaceBefore=2))
+                          fontSize=15, leading=18, alignment=TA_CENTER, spaceBefore=2))
     ss.add(ParagraphStyle("Kicker", parent=ss["Normal"], textColor=MUTED,
-                          fontSize=8, leading=10))
+                          fontSize=8.5, leading=12, alignment=TA_CENTER))
+    ss.add(ParagraphStyle("ScoreNum", parent=ss["Normal"], fontSize=30, leading=34,
+                          alignment=TA_CENTER))
+    ss.add(ParagraphStyle("ScoreLbl", parent=ss["Normal"], fontSize=10, leading=13,
+                          alignment=TA_CENTER))
     ss.add(ParagraphStyle("Section", parent=ss["Heading1"], textColor=NAVY,
                           fontSize=14, leading=17, spaceBefore=16, spaceAfter=6,
                           borderWidth=0, borderColor=NAVY))
@@ -295,20 +299,24 @@ def generate_pdf(
     story.append(Paragraph("INFORME DE AUDITORÍA DE SEGURIDAD", ss["Kicker"]))
     story.append(Paragraph("Auditoría de Identidades y Accesos (IAM)", ss["CoverTitle"]))
     story.append(Paragraph("Microsoft Entra ID", ss["CoverSub"]))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 26))
 
     badge_hex = _hex(badge)
-    score_tbl = Table(
-        [[Paragraph(f'<font size="26" color="{badge_hex}"><b>{score["value"]}</b></font>'
-                    f'<br/><font size="8" color="{badge_hex}"><b>RIESGO {_clean(score["label"])}</b></font>',
-                    ss["Meta"])]],
-        colWidths=[3.2*cm])
-    score_tbl.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 1.5, badge),
+    # Square score badge (number only) + label below, both centred.
+    score_box = Table(
+        [[Paragraph(f'<font size="30" color="{badge_hex}"><b>{score["value"]}</b></font>', ss["ScoreNum"])]],
+        colWidths=[3.4*cm], rowHeights=[3.4*cm])
+    score_box.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 2, badge),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
     ]))
+    score_box.hAlign = "CENTER"
+    story.append(score_box)
+    story.append(Spacer(1, 5))
+    story.append(Paragraph(f'<font color="{badge_hex}"><b>RIESGO {_clean(score["label"])}</b></font>',
+                           ss["ScoreLbl"]))
+    story.append(Spacer(1, 26))
 
     meta = [
         ["Organización:", tenant_name],
@@ -320,14 +328,13 @@ def generate_pdf(
         ["Clasificación:", "Confidencial — Uso interno"],
     ]
     meta_tbl = Table([[Paragraph(f"<b>{_clean(k)}</b>", ss["Meta"]), Paragraph(_clean(v), ss["Meta"])]
-                      for k, v in meta], colWidths=[4.5*cm, 9*cm])
+                      for k, v in meta], colWidths=[4.8*cm, 9*cm])
     meta_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
                                   ("TOPPADDING", (0, 0), (-1, -1), 2),
-                                  ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
-
-    cover = Table([[meta_tbl, score_tbl]], colWidths=[13.7*cm, 3.3*cm])
-    cover.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    story.append(cover)
+                                  ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                                  ("LINEBELOW", (0, 0), (-1, -1), 0.3, LINE)]))
+    meta_tbl.hAlign = "CENTER"
+    story.append(meta_tbl)
     story.append(PageBreak())
 
     # ---------------- TOC ----------------
