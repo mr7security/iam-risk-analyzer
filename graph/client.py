@@ -9,11 +9,16 @@ Handles:
 """
 
 import logging
+import time
 from typing import Any
 
 import requests
 
 logger = logging.getLogger(__name__)
+
+# Max automatic retries when Graph returns 429 (throttling).
+MAX_THROTTLE_RETRIES = 4
+DEFAULT_RETRY_AFTER = 10  # seconds, used when Graph omits the Retry-After header
 
 GRAPH_V1 = "https://graph.microsoft.com/v1.0"
 GRAPH_BETA = "https://graph.microsoft.com/beta"
@@ -34,17 +39,38 @@ class GraphClient:
     # Core HTTP
     # ------------------------------------------------------------------
     def get(self, url: str, params: dict | None = None) -> dict | None:
-        """Single GET. Returns parsed JSON or None on error."""
-        try:
-            resp = self._session.get(url, params=params, timeout=30)
-            resp.raise_for_status()
-            return resp.json()
-        except requests.exceptions.HTTPError as e:
-            logger.warning(f"HTTP error on GET {url}: {e.response.status_code} {e.response.text[:200]}")
-            return None
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Request error on GET {url}: {e}")
-            return None
+        """
+        Single GET. Returns parsed JSON or None on error.
+
+        Automatically retries on HTTP 429 (throttling), honouring the
+        Retry-After header, up to MAX_THROTTLE_RETRIES times.
+        """
+        for attempt in range(MAX_THROTTLE_RETRIES + 1):
+            try:
+                resp = self._session.get(url, params=params, timeout=30)
+
+                if resp.status_code == 429 and attempt < MAX_THROTTLE_RETRIES:
+                    retry_after = int(
+                        resp.headers.get("Retry-After", DEFAULT_RETRY_AFTER)
+                    )
+                    logger.info(
+                        f"Throttled (429) on {url[:70]}... retrying in {retry_after}s "
+                        f"(attempt {attempt + 1}/{MAX_THROTTLE_RETRIES})."
+                    )
+                    time.sleep(retry_after)
+                    continue
+
+                resp.raise_for_status()
+                return resp.json()
+            except requests.exceptions.HTTPError as e:
+                logger.warning(
+                    f"HTTP error on GET {url}: {e.response.status_code} {e.response.text[:200]}"
+                )
+                return None
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Request error on GET {url}: {e}")
+                return None
+        return None
 
     def get_all(self, url: str, params: dict | None = None) -> list[dict]:
         """
