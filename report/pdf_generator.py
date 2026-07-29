@@ -110,7 +110,7 @@ def _styles():
                           fontSize=11.5, leading=14, spaceBefore=8, spaceAfter=2))
     ss.add(ParagraphStyle("Body", parent=ss["Normal"], fontSize=10, leading=14,
                           alignment=TA_JUSTIFY, spaceAfter=6))
-    ss.add(ParagraphStyle("Bullet", parent=ss["Normal"], fontSize=10, leading=14,
+    ss.add(ParagraphStyle("BulletItem", parent=ss["Normal"], fontSize=10, leading=14,
                           leftIndent=12, bulletIndent=2, spaceAfter=3))
     ss.add(ParagraphStyle("Cell", parent=ss["Normal"], fontSize=8.5, leading=11))
     ss.add(ParagraphStyle("CellH", parent=ss["Normal"], fontSize=8, leading=10,
@@ -208,7 +208,7 @@ def _para(text, style):
 
 
 def _bullets(items, ss):
-    return [Paragraph(f"• {it}", ss["Bullet"]) for it in items]
+    return [Paragraph(f"• {it}", ss["BulletItem"]) for it in items]
 
 
 def _severity_tag(sev, ss):
@@ -439,10 +439,10 @@ def generate_pdf(
     ]
     for label, fs in stages:
         ids = ", ".join(f.id for f in fs) if fs else "sin acciones pendientes"
-        story.append(Paragraph(f"<b>{label}:</b> abordar {ids}.", ss["Bullet"]))
+        story.append(Paragraph(f"<b>{label}:</b> abordar {ids}.", ss["BulletItem"]))
     story.append(Paragraph("<b>Estratégico:</b> evaluar la adopción de Entra ID P1/P2 para habilitar "
                            "Acceso Condicional, revisiones de acceso y detección de cuentas inactivas.",
-                           ss["Bullet"]))
+                           ss["BulletItem"]))
 
     # ---------------- 9. Conclusiones ----------------
     story.append(Paragraph("9. Conclusiones", ss["Section"]))
