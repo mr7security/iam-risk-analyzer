@@ -7,6 +7,9 @@ Usage:
     python main.py --auth-method client_secret --tenant-id <tid> --client-id <cid> --client-secret <secret>
     python main.py --auth-method certificate --tenant-id <tid> --client-id <cid> --cert-path ./cert.pfx
     python main.py --auth-method device_code --tenant-id <tid> --client-id <cid>
+
+Configuration can also be supplied via a .env file in the working directory
+(see .env.example). Command-line flags override .env / environment values.
 """
 
 import argparse
@@ -14,6 +17,15 @@ import os
 import sys
 import logging
 from datetime import datetime
+
+# Load a local .env file (if present) so AZURE_* variables are available.
+# Optional dependency: falls back silently if python-dotenv isn't installed.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
 
 from auth.authenticator import Authenticator, AuthMethod
 from graph.client import GraphClient
