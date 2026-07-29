@@ -2,16 +2,19 @@
 checks/informational.py
 Informational checks (IN-01 to IN-04).
 These always produce findings (inventories) — never passed=True.
-
-TODO(devin): Implement the body of each check function.
-             Do NOT change function signatures or Finding field names.
 """
 
 import logging
+from datetime import datetime, timezone, timedelta
+
 from graph.client import GraphClient
 from utils.finding import Finding, Severity
+from checks.common import get_global_admins, parse_graph_datetime
 
 logger = logging.getLogger(__name__)
+
+INACTIVE_DAYS = 30
+_GRAPH_RESOURCE = "Microsoft Graph"
 
 
 def run_informational_checks(graph: GraphClient, selected: set[str] | None) -> list[Finding]:
@@ -41,64 +44,122 @@ def run_informational_checks(graph: GraphClient, selected: set[str] | None) -> l
 
 
 def check_in01(graph: GraphClient) -> Finding:
-    """
-    IN-01: Inventario de Global Admins
-    Always produces a finding listing all current Global Administrators.
-
-    Logic:
-      1. Get Global Admin role ID
-      2. Get all role assignments filtered by that role
-      3. Return complete list as evidence
-
-    Evidence rows: [{"displayName": ..., "userPrincipalName": ..., "id": ...}]
-    """
-    # TODO(devin): implement
-    raise NotImplementedError("IN-01 not yet implemented")
+    """IN-01: Inventory of all Global Administrators."""
+    admins = get_global_admins(graph)
+    evidence = [
+        {
+            "displayName": a["displayName"],
+            "userPrincipalName": a["userPrincipalName"],
+            "id": a["id"],
+        }
+        for a in admins
+    ]
+    return Finding(
+        id="IN-01",
+        title=f"Global Administrator inventory ({len(admins)})",
+        severity=Severity.INFO,
+        description=(
+            f"{len(admins)} account(s) currently hold the Global Administrator role. "
+            "Review this list regularly and keep it as small as possible."
+        ),
+        evidence=evidence,
+        recommendation="",
+    )
 
 
 def check_in02(graph: GraphClient) -> Finding:
-    """
-    IN-02: Inventario de Service Principals con permisos Graph
-    Lists all SPs that have been granted Microsoft Graph API permissions.
+    """IN-02: Inventory of Service Principals with Microsoft Graph permissions."""
+    inventory = []
+    for sp in graph.get_all_service_principals():
+        sp_id = sp.get("id")
+        if not sp_id:
+            continue
+        graph_roles = [
+            a.get("appRoleId")
+            for a in graph.get_sp_app_role_assignments(sp_id)
+            if a.get("resourceDisplayName") == _GRAPH_RESOURCE
+        ]
+        if graph_roles:
+            inventory.append(
+                {
+                    "displayName": sp.get("displayName", "Unknown"),
+                    "appId": sp.get("appId", "—"),
+                    "graphPermissions": graph_roles,
+                }
+            )
 
-    Logic:
-      1. Get all SPs
-      2. For each SP, get app role assignments
-      3. Filter assignments where resourceDisplayName == "Microsoft Graph"
-      4. Return inventory
-
-    Evidence rows: [{"displayName": ..., "appId": ..., "graphPermissions": [...]}]
-    """
-    # TODO(devin): implement
-    raise NotImplementedError("IN-02 not yet implemented")
+    return Finding(
+        id="IN-02",
+        title=f"Service Principals with Microsoft Graph permissions ({len(inventory)})",
+        severity=Severity.INFO,
+        description=(
+            f"{len(inventory)} service principal(s) have been granted Microsoft Graph "
+            "application permissions. App role IDs are shown; review any with broad or "
+            "write scopes."
+        ),
+        evidence=inventory,
+        recommendation="",
+    )
 
 
 def check_in03(graph: GraphClient) -> Finding:
-    """
-    IN-03: Usuarios sin actividad en 30 días
-    Lists users whose lastSignInDateTime > 30 days ago.
+    """IN-03: Users inactive for 30+ days (or never signed in)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=INACTIVE_DAYS)
+    inventory = []
+    for user in graph.get_all_users():
+        activity = user.get("signInActivity") or {}
+        last_signin = parse_graph_datetime(activity.get("lastSignInDateTime"))
+        if last_signin is None or last_signin < cutoff:
+            inventory.append(
+                {
+                    "displayName": user.get("displayName", "Unknown"),
+                    "userPrincipalName": user.get("userPrincipalName", "—"),
+                    "lastSignIn": activity.get("lastSignInDateTime") or "never",
+                    "accountEnabled": user.get("accountEnabled"),
+                }
+            )
 
-    Logic:
-      1. Get all users with signInActivity (beta)
-      2. Filter: lastSignInDateTime < (now - 30 days) OR null (never signed in)
-      3. Return list
-
-    Evidence rows: [{"displayName": ..., "userPrincipalName": ..., "lastSignIn": ..., "accountEnabled": ...}]
-    """
-    # TODO(devin): implement
-    raise NotImplementedError("IN-03 not yet implemented")
+    return Finding(
+        id="IN-03",
+        title=f"Users inactive for {INACTIVE_DAYS}+ days ({len(inventory)})",
+        severity=Severity.INFO,
+        description=(
+            f"{len(inventory)} user(s) have not signed in within {INACTIVE_DAYS} days "
+            "(or have never signed in). Consider disabling or cleaning up stale accounts."
+        ),
+        evidence=inventory,
+        recommendation="",
+    )
 
 
 def check_in04(graph: GraphClient) -> Finding:
-    """
-    IN-04: Conditional Access Policies activas
-    Inventory of all Conditional Access policies and their state.
+    """IN-04: Inventory of Conditional Access policies."""
+    inventory = []
+    for policy in graph.get_conditional_access_policies():
+        conditions = policy.get("conditions") or {}
+        users = (conditions.get("users") or {})
+        apps = (conditions.get("applications") or {})
+        grant = policy.get("grantControls") or {}
+        inventory.append(
+            {
+                "displayName": policy.get("displayName", "Unknown"),
+                "state": policy.get("state", "—"),
+                "conditions": {
+                    "includeUsers": users.get("includeUsers"),
+                    "includeApplications": apps.get("includeApplications"),
+                },
+                "grantControls": grant.get("builtInControls"),
+            }
+        )
 
-    Logic:
-      1. Get all CA policies via graph.get_conditional_access_policies()
-      2. Return list with state, conditions summary, grant controls
-
-    Evidence rows: [{"displayName": ..., "state": ..., "conditions": ..., "grantControls": ...}]
-    """
-    # TODO(devin): implement
-    raise NotImplementedError("IN-04 not yet implemented")
+    return Finding(
+        id="IN-04",
+        title=f"Conditional Access policy inventory ({len(inventory)})",
+        severity=Severity.INFO,
+        description=(
+            f"{len(inventory)} Conditional Access policy/policies found. Review states "
+            "(enabled / reportOnly / disabled) and ensure MFA and device controls are enforced."
+        ),
+        evidence=inventory,
+        recommendation="",
+    )
