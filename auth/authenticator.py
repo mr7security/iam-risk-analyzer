@@ -80,22 +80,17 @@ class Authenticator:
         if not cert_path.exists():
             raise AuthenticationError(f"Certificate file not found: {cert_path}")
 
-        # Load certificate bytes
         cert_bytes = cert_path.read_bytes()
 
-        # Build credential dict depending on format
         if cert_path.suffix.lower() == ".pfx":
             credential = {
                 "private_key_pfx": cert_bytes,
                 "passphrase": self.cert_password,  # may be None if not encrypted
             }
         else:
-            # PEM: expects separate private_key and public_certificate
-            # For simplicity Devin should handle PEM splitting here
-            # TODO(devin): parse PEM and split into private_key / public_certificate
-            raise NotImplementedError(
-                "PEM certificate support: Devin to implement PEM parsing in _certificate_flow"
-            )
+            # PEM (.pem/.crt/.key): parse private key + certificate and hand MSAL
+            # an unencrypted private key, the public cert, and the SHA-1 thumbprint.
+            credential = self._build_pem_credential(cert_bytes)
 
         app = msal.ConfidentialClientApplication(
             client_id=self.client_id,
@@ -104,6 +99,63 @@ class Authenticator:
         )
         result = app.acquire_token_for_client(scopes=GRAPH_SCOPES)
         return self._extract_token(result)
+
+    def _build_pem_credential(self, cert_bytes: bytes) -> dict:
+        """
+        Parse a PEM file (which may hold both the private key and the certificate)
+        and return the credential dict MSAL expects for certificate auth.
+
+        Supports encrypted private keys via self.cert_password.
+        """
+        try:
+            from cryptography.hazmat.primitives import hashes, serialization
+            from cryptography import x509
+        except ImportError as e:
+            raise AuthenticationError(
+                "PEM certificate support requires the 'cryptography' package. "
+                "Install it with: pip install cryptography"
+            ) from e
+
+        password = (
+            self.cert_password.encode("utf-8") if self.cert_password else None
+        )
+
+        # Load the private key from the PEM bytes.
+        try:
+            private_key = serialization.load_pem_private_key(
+                cert_bytes, password=password
+            )
+        except (ValueError, TypeError) as e:
+            raise AuthenticationError(
+                f"Failed to load private key from PEM (wrong password or format?): {e}"
+            ) from e
+
+        # Re-serialize the key to unencrypted PEM for MSAL.
+        private_key_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode("utf-8")
+
+        # Load the certificate (from the same PEM bundle) to compute the thumbprint.
+        try:
+            certificate = x509.load_pem_x509_certificate(cert_bytes)
+        except ValueError as e:
+            raise AuthenticationError(
+                "PEM file does not contain a certificate. Provide a PEM bundle with "
+                f"both the private key and the certificate: {e}"
+            ) from e
+
+        thumbprint = certificate.fingerprint(hashes.SHA1()).hex()
+        public_cert_pem = certificate.public_bytes(
+            encoding=serialization.Encoding.PEM
+        ).decode("utf-8")
+
+        return {
+            "private_key": private_key_pem,
+            "thumbprint": thumbprint,
+            "public_certificate": public_cert_pem,
+        }
 
     def _device_code_flow(self) -> str:
         logger.debug("Using device_code flow")
