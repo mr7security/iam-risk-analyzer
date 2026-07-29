@@ -91,15 +91,36 @@ class GraphClient:
     # Users
     # ------------------------------------------------------------------
     def get_all_users(self, select: list[str] | None = None) -> list[dict]:
-        """Return all users. Optionally limit fields with $select."""
+        """
+        Return all users. Optionally limit fields with $select.
+
+        Tries the beta endpoint first because signInActivity (used by dormancy
+        checks) is only exposed there. On Entra ID Free tenants that property
+        is not licensed and the beta call is rejected, so we fall back to the
+        v1.0 endpoint without signInActivity — the rest of the checks still run.
+        """
         default_select = [
             "id", "displayName", "userPrincipalName", "accountEnabled",
             "signInActivity", "passwordPolicies", "userType", "createdDateTime",
         ]
-        fields = ",".join(select or default_select)
-        return self.get_all(
+        fields = select or default_select
+
+        users = self.get_all(
             f"{GRAPH_BETA}/users",
-            params={"$select": fields, "$top": "999"},
+            params={"$select": ",".join(fields), "$top": "999"},
+        )
+        if users:
+            return users
+
+        # Fallback: drop signInActivity (premium-only) and use v1.0.
+        basic_fields = [f for f in fields if f != "signInActivity"]
+        logger.info(
+            "beta /users returned nothing (likely a non-premium tenant); "
+            "falling back to v1.0 /users without signInActivity."
+        )
+        return self.get_all(
+            f"{GRAPH_V1}/users",
+            params={"$select": ",".join(basic_fields), "$top": "999"},
         )
 
     def get_user_auth_methods(self, user_id: str) -> list[dict]:
