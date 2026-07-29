@@ -39,6 +39,18 @@ def parse_graph_datetime(value: str | None) -> datetime | None:
         return None
 
 
+def signin_activity_available(users) -> bool:
+    """
+    True if at least one user carries a lastSignInDateTime. On Entra ID Free
+    tenants signInActivity is unavailable, so dormancy checks must be skipped
+    rather than flagging every account as dormant.
+    """
+    for u in users:
+        if (u.get("signInActivity") or {}).get("lastSignInDateTime"):
+            return True
+    return False
+
+
 def has_mfa(graph: GraphClient, user_id: str) -> bool:
     """
     Return True if the user has at least one non-password authentication

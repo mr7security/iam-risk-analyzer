@@ -9,7 +9,11 @@ from datetime import datetime, timezone, timedelta
 
 from graph.client import GraphClient
 from utils.finding import Finding, Severity
-from checks.common import get_global_admins, parse_graph_datetime
+from checks.common import (
+    get_global_admins,
+    parse_graph_datetime,
+    signin_activity_available,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +108,25 @@ def check_in02(graph: GraphClient) -> Finding:
 
 def check_in03(graph: GraphClient) -> Finding:
     """IN-03: Users inactive for 30+ days (or never signed in)."""
+    users = graph.get_all_users()
+
+    if not signin_activity_available(users):
+        return Finding(
+            id="IN-03",
+            title="Inactive-user inventory unavailable (needs premium license)",
+            severity=Severity.INFO,
+            description=(
+                "Sign-in activity (lastSignInDateTime) is not available for this tenant. "
+                "This data requires an Entra ID P1/P2 license, so inactive-user reporting "
+                "could not be produced."
+            ),
+            evidence=[],
+            recommendation="",
+        )
+
     cutoff = datetime.now(timezone.utc) - timedelta(days=INACTIVE_DAYS)
     inventory = []
-    for user in graph.get_all_users():
+    for user in users:
         activity = user.get("signInActivity") or {}
         last_signin = parse_graph_datetime(activity.get("lastSignInDateTime"))
         if last_signin is None or last_signin < cutoff:

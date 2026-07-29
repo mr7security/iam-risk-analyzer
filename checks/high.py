@@ -12,6 +12,7 @@ from checks.common import (
     assignments_by_principal,
     has_mfa,
     parse_graph_datetime,
+    signin_activity_available,
 )
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,25 @@ def check_hi02(graph: GraphClient) -> Finding:
     """HI-02: Dormant accounts (90+ days, or never) with active role assignments."""
     assignments = assignments_by_principal(graph)
     users = _users_by_id(graph)
+
+    if not signin_activity_available(users.values()):
+        return Finding(
+            id="HI-02",
+            title="Dormant account check skipped (sign-in data unavailable)",
+            severity=Severity.HIGH,
+            description=(
+                "Sign-in activity (lastSignInDateTime) is not available for this tenant. "
+                "This data requires an Entra ID P1/P2 license, so dormant-account "
+                "detection could not run."
+            ),
+            evidence=[],
+            recommendation=(
+                "Enable Entra ID P1/P2 to surface dormant privileged accounts, or review "
+                "sign-in logs manually."
+            ),
+            passed=True,
+        )
+
     cutoff = datetime.now(timezone.utc) - timedelta(days=DORMANT_DAYS)
     flagged = []
 
