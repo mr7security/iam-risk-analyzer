@@ -80,7 +80,7 @@ az ad app credential reset --id <app-id> --years 1
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_GITHUB/iam-risk-analyzer
+git clone https://github.com/mr7security/iam-risk-analyzer
 cd iam-risk-analyzer
 pip install -r requirements.txt
 cp .env.example .env
